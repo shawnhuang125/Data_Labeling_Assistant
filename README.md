@@ -1,4 +1,3 @@
-# README 的內容
 # 餐廳評論資料標註工具 (Review JSON Editor)
 
 這是一個基於 Python tkinter 開發的 GUI 應用程式，專門用於檢視、編輯與標註餐廳評論資料集（JSON 格式）。
