@@ -41,13 +41,8 @@ UI_CONFIG = {
     },
     "service_tags": {
         "label": "服務標籤 (Service Tags)",
-        "desc": "(可多選)(如果沒有料理菜系也沒有口味描述也沒有食物類型也沒有服務標籤就刪掉該評論並新增同一店家的評論)點擊右側按鈕",
-        "options": [
-            "有插座", "有WIFI", "不限時", "有冷氣", "寵物友善", 
-            "親子友善", "停車方便", "可訂位", "可刷卡", "行動支付",
-            "有包廂", "無障礙設施", "素食友善", "禁菸", "有吸菸區",
-            "有內用", "僅外帶", "自助吧", "吃到飽", "無菜單料理", "收取服務費"
-        ]
+        "desc": "(可多選) 請手動輸入，多個標籤請用「逗號」分隔。例如：有插座, 店員親切(如果沒有料理菜系也沒有口味描述也沒有食物類型也沒有服務標籤就刪掉該評論並新增同一店家的評論)"
+        
     },
     "summary": {
         "label": "評論摘要 (Summary)",
@@ -56,14 +51,7 @@ UI_CONFIG = {
     "review_text": {
         "label": "評論內容 (Review Text)",
         "desc": "完整的評論內容，請保持每一句完整 (不可修改)。"
-    },
-    "atmosphere": {
-        "label": "氣氛 (Atmosphere)",
-        "desc": "(可多選) 店內的環境氛圍。",
-        "options": [
-            "乾淨", "油煙味重", "適合約會", "適合聚餐", "適合獨食"
-        ]
-    },
+    }
 }
 class MultiSelectDropdown(ttk.Frame):
     def __init__(self, parent, options, width=40):
@@ -79,6 +67,7 @@ class MultiSelectDropdown(ttk.Frame):
             textvariable=self.display_var, 
             width=width, 
             state="readonly")
+        
         self.entry.pack(
             side=tk.LEFT, 
             fill=tk.X, 
@@ -254,7 +243,6 @@ class ReviewEditorApp:
         self.food_type_dropdown = None
         self.cuisine_dropdown = None
         self.tags_dropdown = None
-        self.atmosphere_dropdown = None
         
         self.setup_dark_theme() 
 
@@ -293,7 +281,8 @@ class ReviewEditorApp:
             font=("Arial", 10),
             bg="#2d2d2d", fg="#eeeeee",            
             selectbackground="#4a90e2", selectforeground="#ffffff", 
-            highlightthickness=0, borderwidth=1
+            highlightthickness=0, borderwidth=1,
+            exportselection=False
         )
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.listbox.bind('<<ListboxSelect>>', self.on_select)
@@ -354,21 +343,10 @@ class ReviewEditorApp:
             entry_width=40
         )
         
-        # Service Tags(服務標籤)
+        # Service Tags(服務標籤) - [修改] 改成綁定 tags_var 的文字框
         cfg = UI_CONFIG["service_tags"]
-        self.tags_dropdown = self.create_form_field(
-            cfg["label"], None, cfg["desc"], 
-            options=cfg["options"], is_multiselect=True,
-            entry_width=40  
-        )
-
-        # atmosphere(氣氛)
-        cfg = UI_CONFIG["atmosphere"]
-        self.atmosphere_dropdown = self.create_form_field(
-            cfg["label"], None, cfg["desc"], 
-            options=cfg["options"], is_multiselect=True,
-            entry_width=40
-        )
+        # 注意：這裡移除 options 和 is_multiselect，並傳入 self.tags_var
+        self.create_form_field(cfg["label"], self.tags_var, cfg["desc"], entry_width=100)
 
         # 6. Level(等級)
         cfg = UI_CONFIG["level"]
@@ -402,6 +380,17 @@ class ReviewEditorApp:
         self.btn_apply = ttk.Button(self.scrollable_frame, text="✅ 套用變更 (Apply)", command=self.save_current_to_memory)
         self.btn_apply.pack(fill=tk.X, padx=10, pady=20)
 
+        # 1. 在這裡定義哪些欄位需要「自動記憶與同步」
+        self.MEMORY_FIELDS = ["food_type", "cuisine_type", "service_tags"]
+
+        # 2. 建立「欄位名稱」對應「UI元件」的字典
+        # 程式會根據這裡的對應，自動去抓取或填入資料
+        self.field_ui_map = {
+            "food_type": self.food_type_dropdown,
+            "cuisine_type": self.cuisine_dropdown,
+            "service_tags": self.tags_var  # <--- 檢查這裡！原本可能是 tags_dropdown
+        }
+
         self.status_var = tk.StringVar()
         self.status_var.set("請載入 JSON 檔案...")
         self.status_bar = ttk.Label(self.root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
@@ -413,21 +402,43 @@ class ReviewEditorApp:
         bg_color = "#2d2d2d"
         fg_color = "#eeeeee"
         entry_bg = "#3e3e3e"
-        select_bg = "#4a90e2"
+        select_bg = "#4a90e2" # 這是你定義的藍色反白
+        
         self.root.configure(bg=bg_color)
+        
+        # 基礎設定
         style.configure(".", background=bg_color, foreground=fg_color, fieldbackground=entry_bg)
-        style.map(".", background=[("active", select_bg)], foreground=[("active", "white")])
+        
+        # [核心修改] 強制設定全域選取顏色，確保失去焦點時不會變灰或不見
+        style.map(".", 
+            background=[("selected", select_bg), ("active", select_bg)],
+            foreground=[("selected", "white"), ("active", "white")]
+        )
+        
+        # 按鈕設定
         style.configure("TButton", background="#3e3e3e", foreground=fg_color, borderwidth=1, focuscolor=select_bg)
         style.map("TButton", background=[("active", select_bg)], foreground=[("active", "white")])
+        
+        # 輸入框設定
         style.configure("TEntry", fieldbackground=entry_bg, foreground=fg_color, insertcolor="white")
         style.map("TEntry", fieldbackground=[("readonly", entry_bg)]) 
+        
+        # 下拉選單設定
         style.configure("TCombobox", fieldbackground=entry_bg, background=entry_bg, foreground=fg_color, arrowcolor="white")
-        style.map("TCombobox", fieldbackground=[("readonly", entry_bg)], selectbackground=[("readonly", select_bg)])
+        style.map("TCombobox", 
+            fieldbackground=[("readonly", entry_bg)], 
+            selectbackground=[("readonly", select_bg), ("!focus", select_bg)], # 失去焦點也保持藍色
+            selectforeground=[("readonly", "white"), ("!focus", "white")]
+        )
+        
+        # 傳統元件 (Listbox) 的全域設定
         self.root.option_add('*TCombobox*Listbox.background', bg_color)
         self.root.option_add('*TCombobox*Listbox.foreground', fg_color)
         self.root.option_add('*TCombobox*Listbox.selectBackground', select_bg)
         self.root.option_add('*TCombobox*Listbox.selectForeground', 'white')
         self.root.option_add('*TCombobox*Listbox.font', ("Arial", 10))
+        
+        # 滾動條與分割視窗
         style.configure("Vertical.TScrollbar", background="#3e3e3e", troughcolor=bg_color, arrowcolor="white", gripcount=0)
         style.configure("TPanedwindow", background=bg_color)
 
@@ -482,21 +493,22 @@ class ReviewEditorApp:
             self.filename = file_path
 
             self.store_info_cache = {}
+            
+            # =========== [修改開始] ===========
             for item in self.data_list:
                 sid = item.get("original_id")
                 if not sid: continue
-                # 如果該 ID 還沒被記憶，或者記憶中的值是空的，就存入
-                if sid not in self.store_info_cache:
-                    self.store_info_cache[sid] = {"food_type": [], "cuisine_type": [], "service_tags": []}
                 
-                if item.get("food_type"):
-                    self.store_info_cache[sid]["food_type"] = item["food_type"]
-                if item.get("cuisine_type"):
-                    self.store_info_cache[sid]["cuisine_type"] = item["cuisine_type"]
-                if item.get("service_tags"):
-                    self.store_info_cache[sid]["service_tags"] = item["service_tags"]
-                if item.get("atmosphere"):
-                    self.store_info_cache[sid]["atmosphere"] = item["atmosphere"]
+                # 1. 初始化該店家的快取字典 (不用預先寫死 Key 了)
+                if sid not in self.store_info_cache:
+                    self.store_info_cache[sid] = {}
+
+                # 2. 動態遍歷你在 __init__ 設定的記憶欄位
+                # 只要 JSON 裡有這個欄位的資料，就存入快取
+                for field in self.MEMORY_FIELDS:
+                    if item.get(field):
+                        self.store_info_cache[sid][field] = item[field]
+            # =========== [修改結束] ===========
 
             self.refresh_listbox()
             self.status_var.set(f"已載入: {os.path.basename(file_path)} | 共 {len(self.data_list)} 筆資料")
@@ -523,79 +535,54 @@ class ReviewEditorApp:
         data = self.data_list[index]
 
         # 2. 讀取 ID 與基本資料
-        store_id = data.get("original_id", "") # 先抓 ID
+        store_id = data.get("original_id", "") 
         self.original_id_var.set(store_id)
         self.name_var.set(data.get("name", ""))
         self.level_var.set(str(data.get("level", "")))
         self.summary_var.set(data.get("review_summary", ""))
 
-        # 3. [關鍵修正] 先清空所有下拉選單，防止上一筆資料殘留
-        if self.food_type_dropdown: self.food_type_dropdown.set_selection([])
-        if self.tags_dropdown: self.tags_dropdown.set_selection([])
-        if self.cuisine_dropdown: self.cuisine_dropdown.set_selection([])
-        if self.atmosphere_dropdown: self.atmosphere_dropdown.set_selection([])
-
-        # 4. 讀取這筆資料原本的內容 (Raw Data)
-        f_types = data.get("food_type", [])
-        if isinstance(f_types, str): f_types = [f_types] if f_types else []
-        
-        flavors = data.get("flavor", [])
-        if isinstance(flavors, str): flavors = [flavors] if flavors else []
-
-        tags = data.get("service_tags", [])
-        if isinstance(tags, str): tags = [tags] if tags else []
-
-        c_types = data.get("cuisine_type", [])
-        if isinstance(c_types, str): c_types = [c_types] if c_types else []
-
-        atmos = data.get("atmosphere", [])
-        if isinstance(atmos, str): atmos = [atmos] if atmos else []
-
-        # 5. 將資料填入 UI
-        if self.food_type_dropdown: self.food_type_dropdown.set_selection(f_types)
-        if self.tags_dropdown: self.tags_dropdown.set_selection(tags)
-        if self.cuisine_dropdown: self.cuisine_dropdown.set_selection(c_types)
-        if self.atmosphere_dropdown: self.atmosphere_dropdown.set_selection(atmos)
-
-        # 6. 填入文字區
+        # 填入文字區
         self.txt_review.delete("1.0", tk.END)
         self.txt_review.insert("1.0", data.get("review_text", ""))
 
-        # 7. 店家記憶自動填入邏輯 (Auto-fill)
+        # 處理 Flavor (獨有欄位，確保以逗號分隔字串顯示)
+        flavors = data.get("flavor", [])
+        if isinstance(flavors, list):
+            self.flavor_var.set(", ".join(flavors))
+        else:
+            self.flavor_var.set(str(flavors))
+
+        # =========== [修改重點] 動態處理記憶欄位 (含服務標籤) ===========
         auto_filled = False
-        
-        # 只有當 store_id 存在且快取有該店家資料時才執行
-        if store_id and store_id in self.store_info_cache:
-            cache = self.store_info_cache[store_id]
-            
-            # (A) Food Type 自動填入 (如果目前是空的)
-            if self.food_type_dropdown and not f_types and cache.get("food_type"):
-                cached_val = cache["food_type"]
-                if isinstance(cached_val, str): cached_val = [cached_val] if cached_val else []
-                self.food_type_dropdown.set_selection(cached_val)
-                data["food_type"] = cached_val # 同步寫入 data
-                auto_filled = True
+        cache = self.store_info_cache.get(store_id, {}) 
 
-            # (B) Cuisine Type 自動填入
-            if self.cuisine_dropdown and not c_types and cache.get("cuisine_type"):
-                cached_val = cache["cuisine_type"]
-                self.cuisine_dropdown.set_selection(cached_val)
-                data["cuisine_type"] = cached_val
+        for field in self.MEMORY_FIELDS:
+            ui_widget = self.field_ui_map.get(field)
+            if not ui_widget: continue 
+
+            # A. 取得最優先的資料來源 (Data -> Cache -> Default Empty List)
+            raw_val = data.get(field)
+            
+            # 若資料為空且快取有值，執行自動帶入
+            if not raw_val and cache.get(field):
+                raw_val = cache[field]
+                data[field] = raw_val # 寫回當前資料清單，確保存檔時一致
                 auto_filled = True
             
-            # (C) Service Tags 自動填入
-            if self.tags_dropdown and not tags and cache.get("service_tags"):
-                cached_val = cache["service_tags"]
-                self.tags_dropdown.set_selection(cached_val)
-                data["service_tags"] = cached_val
-                auto_filled = True
+            # 確保 raw_val 最終是 List 格式，避免後續顯示錯誤
+            if raw_val is None:
+                raw_val = []
+            elif isinstance(raw_val, str):
+                raw_val = [t.strip() for t in raw_val.split(",") if t.strip()]
 
-            # (D) Atmosphere 自動填入
-            if self.atmosphere_dropdown and not atmos and cache.get("atmosphere"):
-                cached_val = cache["atmosphere"]
-                self.atmosphere_dropdown.set_selection(cached_val)
-                data["atmosphere"] = cached_val
-                auto_filled = True
+            # B. 填入 UI (根據元件特性分流)
+            if hasattr(ui_widget, 'set_selection'):
+                # 適用於：具有自定義 set_selection 方法的物件 (food_type, cuisine_type)
+                ui_widget.set_selection(raw_val)
+            elif isinstance(ui_widget, tk.StringVar):
+                # 適用於：StringVar 變數 (service_tags)
+                ui_widget.set(", ".join(raw_val))
+        # =============================================================
 
         status_msg = f"正在編輯第 {index} 筆資料"
         if auto_filled: 
@@ -605,54 +592,65 @@ class ReviewEditorApp:
     def save_current_to_memory(self):
         if self.current_index is None: return
         try:
-            # 1. 先取得目前 UI 上的所有資料
             store_id = self.original_id_var.get()
             
-            # (A) 取得「單筆獨有」的資料 (評論內容、摘要、等級、店名)
-            current_name = self.name_var.get()
-            current_summary = self.summary_var.get()
+            # (A) 取得「記憶欄位」資料 (跨筆同步：food_type, cuisine_type, service_tags)
+            current_memory_values = {}
+            for field in self.MEMORY_FIELDS:
+                ui_widget = self.field_ui_map.get(field)
+                if not ui_widget: continue
+
+                if hasattr(ui_widget, 'get_selection'):
+                    # 適用於：MultiSelectDropdown
+                    current_memory_values[field] = ui_widget.get_selection()
+                elif isinstance(ui_widget, tk.StringVar):
+                    # 適用於：service_tags 文字輸入框
+                    val_str = ui_widget.get().strip()
+                    # 將 "A, B" 轉為 ["A", "B"]，並過濾掉空白項
+                    current_memory_values[field] = [t.strip() for t in val_str.split(",") if t.strip()]
+
+            # (B) 取得「單筆獨有」欄位並清洗資料
+            current_name = self.name_var.get().strip()
+            current_summary = self.summary_var.get().strip()
             current_review_text = self.txt_review.get("1.0", tk.END).strip()
-            level_str = self.level_var.get()
-            current_level = int(level_str) if level_str.isdigit() else level_str
+            
+            # 處理 Level (確保為整數，若非數字則保留原樣)
+            lvl_raw = self.level_var.get()
+            current_level = int(lvl_raw) if lvl_raw.isdigit() else lvl_raw
+            
+            # 處理 Flavor (雖然是獨有，但也建議轉為 List 存儲以保持結構一致)
+            flavor_str = self.flavor_var.get().strip()
+            current_flavor = [t.strip() for t in flavor_str.split(",") if t.strip()]
 
-            # (B) 取得「店家共用」的標籤資料 (多選選單)
-            val_food = self.food_type_dropdown.get_selection() if self.food_type_dropdown else []
-            val_cuisine = self.cuisine_dropdown.get_selection() if self.cuisine_dropdown else []
-            val_tags = self.tags_dropdown.get_selection() if self.tags_dropdown else []
-            val_atmos = self.atmosphere_dropdown.get_selection() if self.atmosphere_dropdown else []
-
-            # 2. [關鍵修改] 批次更新邏輯 (Batch Update)
-            # 跑迴圈檢查每一筆資料
+            # 2. 批次更新資料清單 (data_list)
             count = 0
             for item in self.data_list:
-                # (A) 如果是「當前選取」的這一筆，更新所有欄位 (包含評論文字)
+                # 更新「當前正在編輯」的這一筆資料
                 if item is self.data_list[self.current_index]:
-                    item["name"] = current_name
-                    item["review_summary"] = current_summary
-                    item["review_text"] = current_review_text
-                    item["level"] = current_level
+                    item.update({
+                        "name": current_name,
+                        "review_summary": current_summary,
+                        "review_text": current_review_text,
+                        "level": current_level,
+                        "flavor": current_flavor
+                    })
                 
-                # (B) 如果 ID 相同 (包含當前這一筆)，同步更新所有「標籤類」欄位
+                # 同步更新「同一間店」的所有記憶欄位
                 if item.get("original_id") == store_id:
-                    item["food_type"] = val_food
-                    item["cuisine_type"] = val_cuisine
-                    item["service_tags"] = val_tags
-                    item["atmosphere"] = val_atmos
+                    for field, val in current_memory_values.items():
+                        item[field] = val
                     count += 1
 
-            # 3. 更新快取 (讓之後新增的資料也能自動帶入)
+            # 3. 更新快取 (Store Cache)
             if store_id:
-                self.store_info_cache[store_id] = {
-                    "food_type": val_food,
-                    "cuisine_type": val_cuisine,
-                    "service_tags": val_tags,
-                    "atmosphere": val_atmos,
-                }
+                if store_id not in self.store_info_cache:
+                    self.store_info_cache[store_id] = {}
+                self.store_info_cache[store_id].update(current_memory_values)
 
-            self.status_var.set(f"✅ 已同步更新此店家共 {count} 筆評論的標籤設定")
+            self.status_var.set(f"✅ 已同步更新此店家共 {count} 筆評論的設定")
             
         except Exception as e:
-            messagebox.showerror("錯誤", f"資料格式錯誤: {e}")
+            messagebox.showerror("錯誤", f"儲存變更時發生錯誤: {e}")
 
     def add_review_for_current_store(self):
         if self.current_index is None:
@@ -668,7 +666,6 @@ class ReviewEditorApp:
             "cuisine_type": current_data.get("cuisine_type", []), 
             "flavor": [],
             "service_tags": [],
-            "atmosphere": [],
             "level": ""
         }
         insert_pos = self.current_index + 1
@@ -691,16 +688,26 @@ class ReviewEditorApp:
     def clear_form(self):
         self.original_id_var.set("")
         self.name_var.set("")
-        self.food_type_var.set("")
+        # self.food_type_var.set("") # 這行不用，因為 food_type 在下方迴圈處理
         self.flavor_var.set("")
         self.level_var.set("")
         self.summary_var.set("")
-        if self.tags_dropdown: self.tags_dropdown.set_selection([])
-        if self.cuisine_dropdown: self.cuisine_dropdown.set_selection([])
-        if self.atmosphere_dropdown: self.atmosphere_dropdown.set_selection([])
+
+        # [手動清空] 服務標籤
+        self.tags_var.set("")
+        
+
+
+        # =========== [自動清空記憶欄位] ===========
+        # 這邊只會清空還留在 MEMORY_FIELDS 裡的 (food_type, cuisine_type)
+        for field in self.MEMORY_FIELDS:
+            ui_widget = self.field_ui_map.get(field)
+            if ui_widget and hasattr(ui_widget, 'set_selection'):
+                ui_widget.set_selection([])
+        # =======================================
         
         self.txt_review.delete("1.0", tk.END)
-
+        
     # [新增] 快速存檔 (直接寫入當前檔案)
     def quick_save(self):
         if not self.data_list:
