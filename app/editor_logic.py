@@ -1,222 +1,12 @@
+# ./app/editor_logic.py
+# 存放主要邏輯與視窗佈局 (ReviewEditorApp)
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import json
 import os
-
-# 全域設定
-UI_CONFIG = {
-    "original_id": {
-        "label": "原始編號 (Original ID)",
-        "desc": "資料庫中的唯一識別碼不可修改。"
-    },
-    "name": {
-        "label": "店名 (Name)",
-        "desc": "店家的完整名稱，例如：鼎泰豐 (信義店)。"
-    },
-    "food_type": {
-        "label": "食物類型 (Food Type)",
-        "desc": "(必填)粗略分類，請選擇最接近的類別。點擊右側按鈕",
-        "options": [
-            "麵食", "飯類", "炸物", "小吃", "粿類", "炒物", "速食", 
-            "甜點", "飲料", "火鍋", "燒烤", "其他"
-        ]
-    },
-    "cuisine_type": {
-        "label": "料理菜系 (Cuisine Type)",
-        "desc": "(必填)(可多選) 請點選下方列表,(如果沒有料理菜系也沒有口味描述也沒有食物類型也沒有服務標籤就刪掉該評論並新增同一店家的評論)點擊右側按鈕",
-        "options": [
-            "中式料理", "日式料理", "韓式料理", "泰式料理", 
-            "義式料理", "美式料理", "法式料理", "台式料理",
-            "新加坡料理", "馬來西亞料理","印尼料理","印度料理"
-        ]
-    },
-    "flavor": {
-        "label": "口味描述 (Flavor)",
-        "desc": "(必填)請填入評論中提到的食物口感或味道描述詞，例如：外酥裡嫩, 麻辣, 奶香濃郁(如果沒有料理菜系也沒有口味描述也沒有食物類型也沒有服務標籤就刪掉該評論並新增同一店家的評論)"
-    },
-    "level": {
-        "label": "等級 (Level)",
-        "desc": "(必填)請根據Flavor欄位判斷:1=負評,2=普通好評(<2個描述詞),3=優質好評(>2個描述詞)或有包含服務標籤(Service Tags)",
-        "options": ["1", "2", "3"]
-    },
-    "service_tags": {
-        "label": "服務標籤 (Service Tags)",
-        "desc": "(可多選) 請手動輸入，多個標籤請用「逗號」分隔。例如：有插座, 店員親切(如果沒有料理菜系也沒有口味描述也沒有食物類型也沒有服務標籤就刪掉該評論並新增同一店家的評論)"
-        
-    },
-    "summary": {
-        "label": "評論摘要 (Summary)",
-        "desc": "(必填)找出包含品項與描述詞的句子。用拼湊的方式不考慮連貫度"
-    },
-    "review_text": {
-        "label": "評論內容 (Review Text)",
-        "desc": "完整的評論內容，請保持每一句完整 (不可修改)。"
-    }
-}
-class MultiSelectDropdown(ttk.Frame):
-    def __init__(self, parent, options, width=40):
-        super().__init__(parent)
-        self.options = options
-        self.vars = {} 
-        self.selected_items = [] 
-
-        
-        self.display_var = tk.StringVar()
-        self.entry = ttk.Entry(
-            self, 
-            textvariable=self.display_var, 
-            width=width, 
-            state="readonly")
-        
-        self.entry.pack(
-            side=tk.LEFT, 
-            fill=tk.X, 
-            expand=True)
-        
-        self.btn = tk.Button(
-            self, 
-            text="▼", 
-            width=2,           # 寬度：2 個字元
-            height=1,          # 高度：1 行文字 (這樣高度就會變小)
-            font=("Arial", 8), # 字體：改小一點 (8號字)，按鈕會更迷你
-            command=self.toggle_dropdown,
-            
-            # 以下是配合深色主題的顏色設定
-            bg="#3e3e3e",      
-            fg="white",
-            activebackground="#4a90e2", # 按下去變藍色
-            activeforeground="white",
-            relief="raised",   # 按鈕樣式
-            bd=1               # 邊框寬度
-        )
-        self.btn.pack(side=tk.RIGHT)
-        self.popup = None
-
-        for opt in self.options:
-            self.vars[opt] = tk.BooleanVar(value=False)
-
-    def toggle_dropdown(self):
-        if self.popup and self.popup.winfo_exists():
-            self.popup.destroy()
-            return
-
-        # 建立無邊框視窗
-        self.popup = tk.Toplevel(self)
-        self.popup.wm_overrideredirect(True) 
-        self.popup.configure(bg="#2d2d2d")
-        
-        # 取得輸入框的位置與尺寸
-        entry_x = self.entry.winfo_rootx()
-        entry_y = self.entry.winfo_rooty()
-        entry_h = self.entry.winfo_height()
-        entry_w = self.entry.winfo_width()
-        
-        # 加上按鈕的寬度，讓選單跟整個元件一樣寬
-        total_width = entry_w + self.btn.winfo_width()
-
-        # 設定選單位置 (在輸入框正下方)
-        y_pos = entry_y + entry_h
-        
-        # [修改] 設定選單大小：寬度跟元件一樣，高度固定 200
-        # 如果您覺得跟元件一樣寬太窄，可以手動指定寬度，例如：f"250x200+{entry_x}+{y_pos}"
-        self.popup.geometry(f"{total_width}x200+{entry_x}+{y_pos}")
-
-        # 建立 Canvas 與 Scrollbar
-        canvas = tk.Canvas(self.popup, bg="#2d2d2d", highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self.popup, orient="vertical", command=canvas.yview)
-        scrollable_frame = tk.Frame(canvas, bg="#2d2d2d")
-
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        
-        # 讓 frame 寬度跟隨 canvas
-        canvas.bind(
-            "<Configure>",
-            lambda e: canvas.itemconfig(window_id, width=e.width)
-        )
-
-        window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        if not self.vars:
-            for opt in self.options:
-                self.vars[opt] = tk.BooleanVar(value=False)
-
-        for opt in self.options:
-            cb = tk.Checkbutton(
-                scrollable_frame, 
-                text=opt, 
-                variable=self.vars[opt], 
-                command=self.update_display, 
-                bg="#2d2d2d", fg="#eeeeee", 
-                selectcolor="#4a90e2", 
-                activebackground="#3e3e3e", activeforeground="white", 
-                anchor="w", 
-                font=("Arial", 10),
-                padx=5, pady=2
-            )
-            cb.pack(fill=tk.X, expand=True)
-
-        self.popup.bind("<FocusOut>", lambda e: self.close_popup(e))
-        self.popup.focus_set() 
-
-        # 滑鼠滾輪事件綁定
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-        def _on_linux_scroll_up(event):
-            canvas.yview_scroll(-1, "units")
-
-        def _on_linux_scroll_down(event):
-            canvas.yview_scroll(1, "units")
-
-        for widget in [self.popup, canvas, scrollable_frame]:
-            widget.bind("<MouseWheel>", _on_mousewheel)
-            widget.bind("<Button-4>", _on_linux_scroll_up)
-            widget.bind("<Button-5>", _on_linux_scroll_down)
-
-    def close_popup(self, event):
-        if self.popup:
-            self.after(100, lambda: self.popup.destroy() if self.popup else None)
-
-    def update_display(self):
-        selected = [opt for opt, var in self.vars.items() if var.get()]
-        self.display_var.set(", ".join(selected))
-        self.selected_items = selected
-
-    def set_selection(self, items):
-        if items is None: items = []
-        if isinstance(items, str) and items: items = [items]
-        elif not items: items = []
-        self.selected_items = items
-        self.display_var.set(", ".join(items))
-        if not self.vars:
-            for opt in self.options:
-                self.vars[opt] = tk.BooleanVar(value=(opt in items))
-        else:
-            for opt, var in self.vars.items():
-                var.set(opt in items)
-
-    def get_selection(self):
-        checked_items = [opt for opt, var in self.vars.items() if var.get()]
-        
-        # 找出那些被 set_selection 設定進來，但不在我們預設 options 裡的資料 (保留它們)
-        preserved_items = [item for item in self.selected_items if item not in self.options]
-        
-        # 為了保持順序並去重
-        result = []
-        seen = set()
-        for item in checked_items + preserved_items:
-            if item not in seen:
-                result.append(item)
-                seen.add(item)
-        return result
-
+from config import UI_CONFIG, MEMORY_FIELDS
+from widgets import MultiSelectDropdown
+import tool
 
 class ReviewEditorApp:
     def __init__(self, root):
@@ -236,7 +26,7 @@ class ReviewEditorApp:
         self.name_var = tk.StringVar()
         self.food_type_var = tk.StringVar()
         self.flavor_var = tk.StringVar()
-        self.level_var = tk.StringVar()
+        self.review_labeled_level_var = tk.StringVar()
         self.tags_var = tk.StringVar()
         self.summary_var = tk.StringVar()
 
@@ -320,37 +110,78 @@ class ReviewEditorApp:
         # 1. Original ID (ReadOnly)
         cfg = UI_CONFIG["original_id"]
         self.create_form_field(cfg["label"], self.original_id_var, cfg["desc"], entry_width=20, readonly=True)
+
+        self.merchant_category_var = tk.StringVar()
         
-        # 2. [修改] Name (ReadOnly)
-        cfg = UI_CONFIG["name"]
-        self.create_form_field(cfg["label"], self.name_var, cfg["desc"], entry_width=40, readonly=True)
-        
-        # 3. Food Type
-        cfg = UI_CONFIG["food_type"]
-        self.food_type_dropdown = self.create_form_field(
-            cfg["label"], 
-            None, # 多選不需要傳入 textvariable 
-            cfg["desc"], 
-            options=cfg.get("options"), 
-            is_multiselect=True,
-            entry_width=40
+        name_row_frame = ttk.Frame(self.scrollable_frame)
+        name_row_frame.pack(fill=tk.X, padx=10, pady=0, anchor=tk.W)
+
+        # 左側：店名 (固定寬 350, 高 100)
+        name_col = ttk.Frame(name_row_frame, width=350, height=100)
+        name_col.pack(side=tk.LEFT, padx=(0, 20))
+        name_col.pack_propagate(False)
+        self.create_form_field_in_parent(
+            name_col, UI_CONFIG["name"]["label"], self.name_var, 
+            UI_CONFIG["name"]["desc"], readonly=True, entry_width=40
         )
-        # Cuisine Type()菜系)
-        cfg = UI_CONFIG["cuisine_type"]
-        self.cuisine_dropdown = self.create_form_field(
-            cfg["label"], None, cfg["desc"], 
-            options=cfg["options"], is_multiselect=True,
-            entry_width=40
+
+        # 右側：店家類型 (固定寬 350, 高 100)
+        category_col = ttk.Frame(name_row_frame, width=350, height=100)
+        category_col.pack(side=tk.LEFT)
+        category_col.pack_propagate(False)
+        cfg_cat = UI_CONFIG["merchant_category"]
+        self.create_form_field_in_parent(
+            category_col, cfg_cat["label"], self.merchant_category_var, 
+            cfg_cat["desc"], options=cfg_cat["options"], entry_width=35
         )
-        
-        # Service Tags(服務標籤) - [修改] 改成綁定 tags_var 的文字框
-        cfg = UI_CONFIG["service_tags"]
-        # 注意：這裡移除 options 和 is_multiselect，並傳入 self.tags_var
-        self.create_form_field(cfg["label"], self.tags_var, cfg["desc"], entry_width=100)
+
+        # --- 第一組併排：食物類型 & 料理菜系 ---
+        row1_frame = ttk.Frame(self.scrollable_frame)
+        row1_frame.pack(fill=tk.X, padx=10, pady=0, anchor=tk.W)
+
+        # 食物類型 (固定寬 350, 高 150)
+        food_col = ttk.Frame(row1_frame, width=350, height=150)
+        food_col.pack(side=tk.LEFT, padx=(0, 20))
+        food_col.pack_propagate(False)
+        self.food_type_dropdown = self.create_form_field_in_parent(
+            food_col, UI_CONFIG["food_type"]["label"], None, UI_CONFIG["food_type"]["desc"], 
+            options=UI_CONFIG["food_type"]["options"], is_multiselect=True, entry_width=35
+        )
+
+        # 料理菜系 (固定寬 350, 高 150)
+        cuisine_col = ttk.Frame(row1_frame, width=350, height=150)
+        cuisine_col.pack(side=tk.LEFT)
+        cuisine_col.pack_propagate(False)
+        self.cuisine_dropdown = self.create_form_field_in_parent(
+            cuisine_col, UI_CONFIG["cuisine_type"]["label"], None, UI_CONFIG["cuisine_type"]["desc"], 
+            options=UI_CONFIG["cuisine_type"]["options"], is_multiselect=True, entry_width=35
+        )
+
+        # --- 第二組併排：硬服務標籤 & 服務標籤 ---
+        row2_frame = ttk.Frame(self.scrollable_frame)
+        row2_frame.pack(fill=tk.X, padx=10, pady=5, anchor=tk.W)
+
+        # 硬服務標籤 (固定寬 350, 高 150)
+        facility_col = ttk.Frame(row2_frame, width=350, height=150)
+        facility_col.pack(side=tk.LEFT, padx=(0, 20))
+        facility_col.pack_propagate(False)
+        self.facility_dropdown = self.create_form_field_in_parent(
+            facility_col, UI_CONFIG["facility_tags"]["label"], None, UI_CONFIG["facility_tags"]["desc"], 
+            options=UI_CONFIG["facility_tags"]["options"], is_multiselect=True, entry_width=35
+        )
+
+        # 服務標籤 (固定寬 350, 高 150)
+        service_col = ttk.Frame(row2_frame, width=350, height=150)
+        service_col.pack(side=tk.LEFT)
+        service_col.pack_propagate(False)
+        self.create_form_field_in_parent(
+            service_col, UI_CONFIG["service_tags"]["label"], self.tags_var, UI_CONFIG["service_tags"]["desc"], 
+            entry_width=35 # 這裡傳入 int
+        )
 
         # 6. Level(等級)
-        cfg = UI_CONFIG["level"]
-        self.create_form_field(cfg["label"], self.level_var, cfg["desc"], entry_width=15, options=cfg["options"])
+        cfg = UI_CONFIG.get("review_labeled_level", UI_CONFIG.get("level", {}))
+        self.create_form_field(cfg.get("label", "評論標記等級"), self.review_labeled_level_var, cfg.get("desc", ""), entry_width=15, options=cfg.get("options", []))
 
         # 5. Flavor(口味)
         cfg = UI_CONFIG["flavor"]
@@ -381,14 +212,17 @@ class ReviewEditorApp:
         self.btn_apply.pack(fill=tk.X, padx=10, pady=20)
 
         # 1. 在這裡定義哪些欄位需要「自動記憶與同步」
-        self.MEMORY_FIELDS = ["food_type", "cuisine_type", "service_tags"]
+        self.MEMORY_FIELDS = ["merchant_category", "food_type", "cuisine_type", "facility_tags","service_tags"]
+
 
         # 2. 建立「欄位名稱」對應「UI元件」的字典
         # 程式會根據這裡的對應，自動去抓取或填入資料
         self.field_ui_map = {
+            "merchant_category": self.merchant_category_var,
             "food_type": self.food_type_dropdown,
             "cuisine_type": self.cuisine_dropdown,
-            "service_tags": self.tags_var  # <--- 檢查這裡！原本可能是 tags_dropdown
+            "facility_tags": self.facility_dropdown,
+            "service_tags": self.tags_var  
         }
 
         self.status_var = tk.StringVar()
@@ -442,6 +276,40 @@ class ReviewEditorApp:
         style.configure("Vertical.TScrollbar", background="#3e3e3e", troughcolor=bg_color, arrowcolor="white", gripcount=0)
         style.configure("TPanedwindow", background=bg_color)
 
+    def create_form_field_in_parent(self, parent, label_text, variable, description="", entry_width=40, options=None, readonly=False, is_multiselect=False):
+        """輔助方法：確保高度統一且底部對齊，並修正類型警告"""
+        frame = ttk.Frame(parent)
+        frame.pack(fill=tk.BOTH, expand=True, padx=0, pady=5)
+        
+        # 標題
+        lbl_title = ttk.Label(frame, text=label_text, font=("Arial", 10, "bold"))
+        lbl_title.pack(anchor=tk.W)
+        
+        # 描述 (使用 wraplength 處理自動換行，避免撐開容器)
+        if description:
+            lbl_desc = ttk.Label(
+                frame, text=description, font=("Arial", 9), 
+                foreground="#aaaaaa", justify="left", wraplength=320 
+            )
+            lbl_desc.pack(anchor=tk.W, pady=(0, 3))
+        
+        # 輸入控制項：統一放置於底部 (tk.BOTTOM)
+        if is_multiselect and options:
+            dropdown = MultiSelectDropdown(frame, options, width=entry_width)
+            dropdown.pack(side=tk.BOTTOM, anchor=tk.W, fill=tk.X, pady=(0, 5))
+            return dropdown 
+        elif options:
+            entry = ttk.Combobox(frame, textvariable=variable, values=options, width=entry_width)
+            entry['state'] = 'readonly' 
+            entry.pack(side=tk.BOTTOM, anchor=tk.W, fill=tk.X, pady=(0, 5))
+            return None
+        else:
+            entry = ttk.Entry(frame, textvariable=variable, width=entry_width)
+            entry.pack(side=tk.BOTTOM, anchor=tk.W, fill=tk.X, pady=(0, 5))
+            if readonly:
+                entry.config(state='readonly')
+            return None
+
     def create_form_field(self, label_text, variable, description="", entry_width=None, options=None, readonly=False, is_multiselect=False):
         frame = ttk.Frame(self.scrollable_frame)
         frame.pack(fill=tk.X, padx=10, pady=8)
@@ -489,22 +357,22 @@ class ReviewEditorApp:
         if not file_path: return
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                self.data_list = json.load(f)
+                self.data_list = tool.process_data_on_load(json.load(f))
             self.filename = file_path
 
             self.store_info_cache = {}
             
             # =========== [修改開始] ===========
             for item in self.data_list:
-                sid = item.get("original_id")
+                # 💡 修正：剛載入時 original_id 已被 tool.py 改名為 place_id 了！且轉為字串
+                sid = str(item.get("place_id", "")).strip()
                 if not sid: continue
                 
-                # 1. 初始化該店家的快取字典 (不用預先寫死 Key 了)
+                # 1. 初始化該店家的快取字典
                 if sid not in self.store_info_cache:
                     self.store_info_cache[sid] = {}
 
                 # 2. 動態遍歷你在 __init__ 設定的記憶欄位
-                # 只要 JSON 裡有這個欄位的資料，就存入快取
                 for field in self.MEMORY_FIELDS:
                     if item.get(field):
                         self.store_info_cache[sid][field] = item[field]
@@ -520,7 +388,7 @@ class ReviewEditorApp:
     def refresh_listbox(self):
         self.listbox.delete(0, tk.END)
         for idx, item in enumerate(self.data_list):
-            display_text = f"[{idx}] ID:{item.get('original_id', '?')} | {item.get('name', 'Unknown')}"
+            display_text = f"[{idx}] ID:{item.get('place_id', '?')} | {item.get('name', 'Unknown')}"
             self.listbox.insert(tk.END, display_text)
 
     def on_select(self, event):
@@ -535,10 +403,10 @@ class ReviewEditorApp:
         data = self.data_list[index]
 
         # 2. 讀取 ID 與基本資料
-        store_id = data.get("original_id", "") 
+        store_id = str(data.get("place_id", "")).strip()
         self.original_id_var.set(store_id)
         self.name_var.set(data.get("name", ""))
-        self.level_var.set(str(data.get("level", "")))
+        self.review_labeled_level_var.set(str(data.get("review_labeled_level", "")))
         self.summary_var.set(data.get("review_summary", ""))
 
         # 填入文字區
@@ -560,29 +428,24 @@ class ReviewEditorApp:
             ui_widget = self.field_ui_map.get(field)
             if not ui_widget: continue 
 
-            # A. 取得最優先的資料來源 (Data -> Cache -> Default Empty List)
+            # A. 取得最優先的資料來源 (Data -> Cache)
             raw_val = data.get(field)
             
-            # 若資料為空且快取有值，執行自動帶入
             if not raw_val and cache.get(field):
                 raw_val = cache[field]
-                data[field] = raw_val # 寫回當前資料清單，確保存檔時一致
+                data[field] = raw_val 
                 auto_filled = True
-            
-            # 確保 raw_val 最終是 List 格式，避免後續顯示錯誤
-            if raw_val is None:
-                raw_val = []
-            elif isinstance(raw_val, str):
-                raw_val = [t.strip() for t in raw_val.split(",") if t.strip()]
 
-            # B. 填入 UI (根據元件特性分流)
+            display_list = tool.normalize_to_list(raw_val, field)
+
+            # 填入 UI
             if hasattr(ui_widget, 'set_selection'):
-                # 適用於：具有自定義 set_selection 方法的物件 (food_type, cuisine_type)
-                ui_widget.set_selection(raw_val)
+                ui_widget.set_selection(display_list)
             elif isinstance(ui_widget, tk.StringVar):
-                # 適用於：StringVar 變數 (service_tags)
-                ui_widget.set(", ".join(raw_val))
-        # =============================================================
+                if field == "merchant_category":
+                    ui_widget.set(display_list[0] if display_list else "")
+                else:
+                    ui_widget.set(", ".join(display_list))
 
         status_msg = f"正在編輯第 {index} 筆資料"
         if auto_filled: 
@@ -594,52 +457,43 @@ class ReviewEditorApp:
         try:
             store_id = self.original_id_var.get()
             
-            # (A) 取得「記憶欄位」資料 (跨筆同步：food_type, cuisine_type, service_tags)
+            # (A) 取得「記憶欄位」資料
             current_memory_values = {}
             for field in self.MEMORY_FIELDS:
                 ui_widget = self.field_ui_map.get(field)
                 if not ui_widget: continue
 
+                # 統一拿取 UI 的值
                 if hasattr(ui_widget, 'get_selection'):
-                    # 適用於：MultiSelectDropdown
-                    current_memory_values[field] = ui_widget.get_selection()
-                elif isinstance(ui_widget, tk.StringVar):
-                    # 適用於：service_tags 文字輸入框
-                    val_str = ui_widget.get().strip()
-                    # 將 "A, B" 轉為 ["A", "B"]，並過濾掉空白項
-                    current_memory_values[field] = [t.strip() for t in val_str.split(",") if t.strip()]
+                    raw_ui_val = ui_widget.get_selection()
+                else:
+                    raw_ui_val = ui_widget.get()
 
-            # (B) 取得「單筆獨有」欄位並清洗資料
-            current_name = self.name_var.get().strip()
-            current_summary = self.summary_var.get().strip()
-            current_review_text = self.txt_review.get("1.0", tk.END).strip()
-            
-            # 處理 Level (確保為整數，若非數字則保留原樣)
-            lvl_raw = self.level_var.get()
-            current_level = int(lvl_raw) if lvl_raw.isdigit() else lvl_raw
-            
-            # 處理 Flavor (雖然是獨有，但也建議轉為 List 存儲以保持結構一致)
-            flavor_str = self.flavor_var.get().strip()
-            current_flavor = [t.strip() for t in flavor_str.split(",") if t.strip()]
+                # 呼叫工具轉換格式 (傳入對應的 options)
+                current_memory_values[field] = tool.format_value_for_save(
+                    field, 
+                    raw_ui_val, 
+                    UI_CONFIG.get(field, {}).get("options")
+                )
+                # ------------------------------------
 
-            # 2. 批次更新資料清單 (data_list)
-            count = 0
-            for item in self.data_list:
-                # 更新「當前正在編輯」的這一筆資料
-                if item is self.data_list[self.current_index]:
-                    item.update({
-                        "name": current_name,
-                        "review_summary": current_summary,
-                        "review_text": current_review_text,
-                        "level": current_level,
-                        "flavor": current_flavor
-                    })
-                
-                # 同步更新「同一間店」的所有記憶欄位
-                if item.get("original_id") == store_id:
-                    for field, val in current_memory_values.items():
-                        item[field] = val
-                    count += 1
+            # 2. 取得並清洗「單筆獨有」欄位資料
+            unique_data = tool.clean_unique_data(
+                self.name_var.get(),
+                self.summary_var.get(),
+                self.txt_review.get("1.0", tk.END),
+                self.review_labeled_level_var.get(),
+                self.flavor_var.get()
+            )
+
+            # 3. 呼叫 tool 執行批次更新
+            self.data_list, count = tool.update_data_list_batch(
+                self.data_list,
+                self.current_index,
+                store_id,
+                unique_data,
+                current_memory_values
+            )
 
             # 3. 更新快取 (Store Cache)
             if store_id:
@@ -658,7 +512,7 @@ class ReviewEditorApp:
             return
         current_data = self.data_list[self.current_index]
         new_entry = {
-            "original_id": current_data.get("original_id", ""),
+            "place_id": current_data.get("place_id", ""),
             "name": current_data.get("name", ""),
             "review_summary": "",
             "review_text": "", 
@@ -666,7 +520,7 @@ class ReviewEditorApp:
             "cuisine_type": current_data.get("cuisine_type", []), 
             "flavor": [],
             "service_tags": [],
-            "level": ""
+            "review_labeled_level": ""
         }
         insert_pos = self.current_index + 1
         self.data_list.insert(insert_pos, new_entry)
@@ -690,7 +544,7 @@ class ReviewEditorApp:
         self.name_var.set("")
         # self.food_type_var.set("") # 這行不用，因為 food_type 在下方迴圈處理
         self.flavor_var.set("")
-        self.level_var.set("")
+        self.review_labeled_level_var.set("")
         self.summary_var.set("")
 
         # [手動清空] 服務標籤
@@ -702,8 +556,12 @@ class ReviewEditorApp:
         # 這邊只會清空還留在 MEMORY_FIELDS 裡的 (food_type, cuisine_type)
         for field in self.MEMORY_FIELDS:
             ui_widget = self.field_ui_map.get(field)
-            if ui_widget and hasattr(ui_widget, 'set_selection'):
-                ui_widget.set_selection([])
+            if ui_widget:
+                if hasattr(ui_widget, 'set_selection'):
+                    ui_widget.set_selection([])
+                elif hasattr(ui_widget, 'set'):
+                    # 💡 修正：加上 .set("") 以支援 StringVar (例如 merchant_category)
+                    ui_widget.set("")
         # =======================================
         
         self.txt_review.delete("1.0", tk.END)
@@ -758,9 +616,3 @@ class ReviewEditorApp:
             self.status_var.set(f"💾 已另存: {os.path.basename(file_path)}")
         except Exception as e:
             messagebox.showerror("錯誤", f"存檔失敗: {e}")
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = ReviewEditorApp(root)
-    root.mainloop()
-
