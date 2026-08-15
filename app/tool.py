@@ -58,14 +58,29 @@ def format_value_for_save(field, ui_value, all_options=None):
 
 def clean_unique_data(name, summary, review_text, level_raw, flavor_str):
     """
-    清洗單筆評論獨有的欄位
+    清洗單筆評論獨有的欄位（嚴格型態防禦版）
     """
+    # 確保傳進來的都是字串，並剔除首尾空白與 Tkinter 的末尾換行
+    cleaned_name = str(name).strip()
+    cleaned_summary = str(summary).strip().rstrip('\n')
+    cleaned_review_text = str(review_text).strip().rstrip('\n')
+    
+    # 【核心修正】統一保持為字串型態！絕對不要轉成 int
+    # 這樣可以確保不論是寫入 JSON 還是與 config 交互，型態都是完全一致的 str
+    cleaned_level = str(level_raw).strip()
+    
+    # 安全拆分口味標籤
+    if isinstance(flavor_str, str):
+        cleaned_flavor = [t.strip() for t in flavor_str.split(",") if t.strip()]
+    else:
+        cleaned_flavor = []
+        
     return {
-        "name": name.strip(),
-        "review_summary": summary.strip(),
-        "review_text": review_text.strip(),
-        "level": int(level_raw) if level_raw.isdigit() else level_raw,
-        "flavor": [t.strip() for t in flavor_str.split(",") if t.strip()]
+        "name": cleaned_name,
+        "review_summary": cleaned_summary,
+        "review_text": cleaned_review_text,
+        "review_labeled_level": cleaned_level,
+        "flavor": cleaned_flavor
     }
 
 def update_data_list_batch(data_list, current_index, store_id, unique_data, memory_values):
